@@ -1,0 +1,23 @@
+# Gizli məlumatlar (.env.example Git-ə gedir)
+.env
+ 
+# Airflow icra faylları
+airflow/logs/*
+!airflow/logs/.gitkeep
+ 
+# Spark artefaktları
+spark-warehouse/
+metastore_db/
+derby.log
+.ivy2/
+ 
+# Python
+__pycache__/
+*.pyc
+ 
+# Redaktor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+ 

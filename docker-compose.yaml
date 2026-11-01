@@ -1,0 +1,175 @@
+x-airflow-common:
+  &airflow-common
+ 
+  build:
+    context: .
+    dockerfile: Dockerfile
+ 
+  image: ${AIRFLOW_IMAGE_NAME}
+ 
+  env_file:
+    - .env
+ 
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/files:/opt/airflow/files
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/config:/opt/airflow/config
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./airflow/spark_jobs:/opt/airflow/spark_jobs
+    - ./airflow/data:/opt/airflow/data
+ 
+  user: "${AIRFLOW_UID:-50000}:0"
+ 
+  depends_on:
+    &airflow-common-depends-on
+    postgres:
+      condition: service_healthy
+ 
+services:
+ 
+  postgres:
+    image: postgres:16
+ 
+    env_file:
+      - .env
+ 
+    ports:
+      - "5437:5432"
+ 
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./sql:/sql:ro
+ 
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U ${POSTGRES_USER:-airflow} -d ${POSTGRES_DB:-airflow}"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+ 
+    networks:
+      - lake
+ 
+    restart: always
+ 
+ 
+  airflow-init:
+    <<: *airflow-common
+ 
+    command:
+      - bash
+      - -c
+      - |
+        python -m airflow db migrate
+        python -m airflow users create \
+          --username admin \
+          --password admin \
+          --firstname Admin \
+          --lastname User \
+          --role Admin \
+          --email admin@local || true
+ 
+    networks:
+      - lake
+ 
+    restart: "no"
+ 
+    depends_on:
+      postgres:
+        condition: service_healthy
+ 
+ 
+  airflow-api-server:
+    <<: *airflow-common
+ 
+    command:
+      - api-server
+ 
+    networks:
+      - lake
+ 
+    ports:
+      - "8090:8080"
+ 
+    restart: always
+ 
+    depends_on:
+      <<: *airflow-common-depends-on
+ 
+      airflow-init:
+        condition: service_completed_successfully
+ 
+ 
+  airflow-scheduler:
+    <<: *airflow-common
+ 
+    command:
+      - scheduler
+ 
+    networks:
+      - lake
+ 
+    restart: always
+ 
+    depends_on:
+      <<: *airflow-common-depends-on
+ 
+      airflow-init:
+        condition: service_completed_successfully
+ 
+ 
+  airflow-dag-processor:
+    <<: *airflow-common
+ 
+    command:
+      - dag-processor
+ 
+    networks:
+      - lake
+ 
+    restart: always
+ 
+    depends_on:
+      <<: *airflow-common-depends-on
+ 
+      airflow-init:
+        condition: service_completed_successfully
+ 
+ 
+  minio:
+    image: cgr.dev/chainguard/minio:latest
+ 
+    command:
+      - server
+      - /data
+      - --console-address
+      - ":9001"
+ 
+    env_file:
+      - .env
+ 
+    ports:
+      - "9010:9000"
+      - "9011:9001"
+ 
+    volumes:
+      - minio:/data
+ 
+    networks:
+      - lake
+ 
+    restart: always
+ 
+ 
+volumes:
+  minio:
+  pgdata:
+ 
+ 
+networks:
+  lake:
+    driver: bridge
